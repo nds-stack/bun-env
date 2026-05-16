@@ -1,4 +1,7 @@
 {
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "@nds-stack/bun-env",
+  "description": "Environment variable validator for Bun — schema-based type coercion, zero dependencies",
   "url": "https://context7.com/nds-stack/bun-env",
   "public_key": "pk_Zd1vpPPhPhvxg6ZjZWp5g"
 }
