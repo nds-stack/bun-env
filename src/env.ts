@@ -1,48 +1,92 @@
 import type { EnvSchema, EnvSchemaEntry, EnvResult, EnvError } from "./types/index.ts";
 import { BunEnvError } from "./errors/bun-env-error.ts";
 
-function coerce(raw: string | undefined, entry: EnvSchemaEntry): unknown {
-  if (raw === undefined || raw === "") {
+function validateDefault(value: unknown, entry: EnvSchemaEntry): void {
+  switch (entry.type) {
+    case "number":
+    case "port":
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        throw new BunEnvError(`Invalid default for ${entry.description ?? "env var"}: expected a number, got ${typeof value}`);
+      }
+      break;
+    case "boolean":
+      if (typeof value !== "boolean") {
+        throw new BunEnvError(`Invalid default for ${entry.description ?? "env var"}: expected a boolean, got ${typeof value}`);
+      }
+      break;
+    case "string":
+      if (typeof value !== "string") {
+        throw new BunEnvError(`Invalid default for ${entry.description ?? "env var"}: expected a string, got ${typeof value}`);
+      }
+      break;
+    case "url":
+      if (typeof value !== "string") {
+        throw new BunEnvError(`Invalid default for ${entry.description ?? "env var"}: expected a string, got ${typeof value}`);
+      }
+      try { new URL(value); } catch {
+        throw new BunEnvError(`Invalid default for ${entry.description ?? "env var"}: expected a valid URL, got "${value}"`);
+      }
+      break;
+    case "host":
+      if (typeof value !== "string" || !/^[\w.-]+$/.test(value)) {
+        throw new BunEnvError(`Invalid default for ${entry.description ?? "env var"}: expected a valid hostname, got "${String(value)}"`);
+      }
+      break;
+    case "enum":
+      if (!entry.values?.includes(value as string)) {
+        throw new BunEnvError(`Invalid default for ${entry.description ?? "env var"}: expected one of ${entry.values?.join(", ") ?? "—"}, got "${String(value)}"`);
+      }
+      break;
+  }
+}
+
+function coerce(raw: unknown, entry: EnvSchemaEntry): unknown {
+  if (raw == null || raw === "" || (typeof raw === "string" && raw.trim() === "")) {
     if (entry.required) {
-      throw new BunEnvError(
-        `Missing required environment variable. ` +
-        `Set \`${entry.description ?? "see schema"}\` in .env or export it.`,
-      );
+      throw new BunEnvError("Required env var not set");
+    }
+    if (entry.default !== undefined) {
+      validateDefault(entry.default, entry);
     }
     return entry.default;
   }
 
+  const strVal = typeof raw === "string" ? raw.trim() : String(raw).trim();
+
   switch (entry.type) {
     case "string": {
-      return raw;
+      return strVal;
     }
 
     case "number": {
-      const n = Number(raw);
+      if (!/^[+-]?\d+(\.\d+)?$/.test(strVal)) {
+        throw new BunEnvError(
+          `Expected a decimal number, got "${strVal}". Use plain decimal (e.g., 3000, 0.5, -1).`,
+        );
+      }
+      const n = Number(strVal);
       if (!Number.isFinite(n)) {
         throw new BunEnvError(
-          `Expected a number, got "${raw}". ` +
-          `Use a numeric value (e.g., 3000, 0.5, -1).`,
+          `Expected a number, got "${strVal}". Use a numeric value (e.g., 3000, 0.5, -1).`,
         );
       }
       return n;
     }
 
     case "boolean": {
-      const lower = raw.toLowerCase();
+      const lower = strVal.toLowerCase();
       if (lower === "true" || lower === "1" || lower === "yes") return true;
       if (lower === "false" || lower === "0" || lower === "no") return false;
       throw new BunEnvError(
-        `Expected a boolean, got "${raw}". ` +
-        `Use true/false, 1/0, or yes/no.`,
+        `Expected a boolean, got "${strVal}". Use true/false, 1/0, or yes/no.`,
       );
     }
 
     case "port": {
-      const n = Number(raw);
+      const n = Number(strVal);
       if (!Number.isInteger(n) || n < 1 || n > 65535) {
         throw new BunEnvError(
-          `Expected a valid port (1-65535), got "${raw}".`,
+          `Expected a valid port (1-65535), got "${strVal}".`,
         );
       }
       return n;
@@ -50,38 +94,38 @@ function coerce(raw: string | undefined, entry: EnvSchemaEntry): unknown {
 
     case "url": {
       try {
-        const url = new URL(raw);
+        const url = new URL(strVal);
         if (!url.protocol.startsWith("http")) {
           throw new Error("not an HTTP URL");
         }
-        return raw;
+        return strVal;
       } catch {
         throw new BunEnvError(
-          `Expected a valid URL (http://... or https://...), got "${raw}".`,
+          `Expected a valid URL (http://... or https://...), got "${strVal}".`,
         );
       }
     }
 
     case "host": {
-      if (!/^[\w.-]+$/.test(raw)) {
+      if (!/^[\w.-]+$/.test(strVal)) {
         throw new BunEnvError(
-          `Expected a valid hostname or IP, got "${raw}".`,
+          `Expected a valid hostname or IP, got "${strVal}".`,
         );
       }
-      return raw;
+      return strVal;
     }
 
     case "enum": {
-      if (!entry.values || !entry.values.includes(raw)) {
+      if (!entry.values?.includes(strVal)) {
         throw new BunEnvError(
-          `Expected one of: ${entry.values?.join(", ") ?? "—"}, got "${raw}".`,
+          `Expected one of: ${entry.values?.join(", ") ?? "—"}, got "${strVal}".`,
         );
       }
-      return raw;
+      return strVal;
     }
 
     default:
-      return raw;
+      throw new BunEnvError(`Unknown type: ${entry.type}`);
   }
 }
 

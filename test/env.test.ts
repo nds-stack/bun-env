@@ -1,7 +1,23 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { env } from "../src/index.ts";
 
 describe("bun-env", () => {
+  let originalEnv: Record<string, string | undefined>;
+
+  beforeEach(() => {
+    originalEnv = { ...Bun.env };
+  });
+
+  afterEach(() => {
+    for (const key of Object.keys(Bun.env)) {
+      if (!(key in originalEnv)) {
+        delete (Bun.env as Record<string, string | undefined>)[key];
+      }
+    }
+    for (const [key, value] of Object.entries(originalEnv)) {
+      (Bun.env as Record<string, string | undefined>)[key] = value;
+    }
+  });
   test("returns string value", () => {
     const config = env({ MY_VAR: { type: "string", default: "fallback" } });
     expect(config.MY_VAR).toBe("fallback");

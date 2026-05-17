@@ -175,6 +175,113 @@ At ~2M schema validations per second, bun-env adds negligible startup time.
 
 ---
 
+## Multi-Instance
+
+The `env()` function is **pure** — it accepts a schema object and returns a validated config object with no shared state. This makes it safe for use in workers, clusters, or serverless runtimes:
+
+```typescript
+import { env } from "@nds-stack/bun-env";
+import { Worker } from "bun";
+
+// Main thread
+const config = env({
+  PORT: { type: "port", default: 3000 },
+});
+
+// Each worker calls env() independently
+new Worker(new URL("./worker.ts", import.meta.url));
+
+// worker.ts
+import { env } from "@nds-stack/bun-env";
+const workerConfig = env({
+  PORT: { type: "port", default: 3001 }, // independent validation
+});
+```
+
+Each call validates independently — no race conditions, no shared mutation.
+
+---
+
+## Customization Guide
+
+### Add Custom Validators
+
+Validate the result after `env()` returns for custom logic:
+
+```typescript
+import { env } from "@nds-stack/bun-env";
+
+const config = env({
+  API_KEYS: { type: "string", required: true },
+});
+
+// Custom validation
+const apiKeys = config.API_KEYS.split(",").map(k => k.trim());
+if (apiKeys.length === 0) {
+  throw new Error("At least one API key is required");
+}
+```
+
+### Extend Schemas
+
+Compose multiple schemas for layered configuration:
+
+```typescript
+import { env } from "@nds-stack/bun-env";
+
+const base = env({
+  NODE_ENV: { type: "enum", values: ["development", "production"], default: "development" },
+  LOG_LEVEL: { type: "enum", values: ["debug", "info", "warn", "error"], default: "info" },
+});
+
+const database = env({
+  DATABASE_URL: { type: "url", required: true },
+});
+
+const config = { ...base, ...database };
+```
+
+### Compose Env with Args
+
+Combine environment validation with CLI argument parsing:
+
+```typescript
+import { env } from "@nds-stack/bun-env";
+// import { args } from "@nds-stack/bun-args";
+
+const envConfig = env({
+  PORT: { type: "port", default: 3000 },
+  HOST: { type: "host", default: "0.0.0.0" },
+});
+
+// const cliArgs = args(/* ... */);
+// const config = { ...envConfig, ...cliArgs };
+```
+
+### Handle Sensitive Values
+
+Mask sensitive values in logs:
+
+```typescript
+import { env } from "@nds-stack/bun-env";
+
+const config = env({
+  DATABASE_URL: { type: "url", required: true },
+  API_SECRET: { type: "string", required: true },
+});
+
+function mask(value: string): string {
+  return value.length > 8
+    ? value.slice(0, 4) + "****" + value.slice(-4)
+    : "****";
+}
+
+console.log("DB:", config.DATABASE_URL);         // postgres://user:pass@host/db
+console.log("Secret:", mask(config.API_SECRET)); // abc****xyz1
+```
+
+---
+
 ## License
 
 MIT
